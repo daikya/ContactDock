@@ -75,3 +75,93 @@ def search_contacts(connection, query):
     ])
     sql = _SELECT + ' AND (' + ' OR '.join(conditions) + ') ' + _ORDER
     return [ContactSummary(*row) for row in connection.execute(sql, (query,) * len(conditions)).fetchall()]
+
+
+@dataclass(frozen=True)
+class ImportSource:
+    batch_id: int
+    record_number: int
+    filename: str
+    encoding: str
+    sha256: str
+    imported_at: str
+    fields: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class ContactDetail:
+    id: int
+    fields: dict[str, str]
+    created_at: str
+    updated_at: str
+    phones: tuple[dict, ...]
+    emails: tuple[dict, ...]
+    addresses: tuple[dict, ...]
+    source: ImportSource | None
+
+    @property
+    def display_name(self):
+        return ' '.join(self.fields[key] for key in ('family_name', 'given_name') if self.fields[key])
+
+
+def _dict_rows(connection, sql, parameters):
+    cursor = connection.execute(sql, parameters)
+    names = [column[0] for column in cursor.description]
+    return tuple(dict(zip(names, row)) for row in cursor.fetchall())
+
+
+def get_contact(connection, contact_id):
+    """Read a consistent active-contact detail, or return None.
+
+    A savepoint keeps all component reads in the same snapshot and preserves
+    the caller's existing transaction. No original CSV BLOB is loaded here.
+    """
+    import json
+    import uuid
+    if isinstance(contact_id, bool) or not isinstance(contact_id, int):
+        raise TypeError('連絡先IDは整数で指定してください。')
+    savepoint = 'contactdock_detail_' + uuid.uuid4().hex
+    connection.execute(f'SAVEPOINT {savepoint}')
+    try:
+        contacts = _dict_rows(connection,
+            'SELECT * FROM contacts WHERE id=? AND deleted_at IS NULL', (contact_id,))
+        if not contacts:
+            detail = None
+        else:
+            contact = contacts[0]
+            field_names = ('family_name','given_name','family_name_kana','given_name_kana',
+                           'company_name','company_name_kana','department','job_title',
+                           'note','web_page','birthday')
+            phones = _dict_rows(connection, '''SELECT kind,position,value FROM contact_phones
+                WHERE contact_id=? ORDER BY kind,position,id''', (contact_id,))
+            emails = _dict_rows(connection, '''SELECT position,address,display_name,source_type
+                FROM contact_emails WHERE contact_id=? ORDER BY position,id''', (contact_id,))
+            addresses = _dict_rows(connection, '''SELECT kind,country_region,postal_code,prefecture,
+                city,street,post_office_box FROM contact_addresses WHERE contact_id=?
+                ORDER BY CASE kind WHEN 'work' THEN 1 WHEN 'home' THEN 2 ELSE 3 END,id''', (contact_id,))
+            source = None
+            if contact['import_batch_id'] is not None:
+                batches = _dict_rows(connection, '''SELECT id,source_filename,source_encoding,
+                    source_sha256,imported_at,headers_json FROM import_batches WHERE id=?''',
+                    (contact['import_batch_id'],))
+                if not batches:
+                    raise ValueError('移行元の取込情報が見つかりません。')
+                batch = batches[0]
+                headers = json.loads(batch['headers_json'])
+                values = json.loads(contact['source_values_json'])
+                if not isinstance(headers,list) or not isinstance(values,list) or not all(
+                        isinstance(value,str) for value in headers + values):
+                    raise ValueError('移行元情報の形式が不正です。')
+                if len(headers) != len(values):
+                    raise ValueError('移行元の項目名と元値の件数が一致しません。')
+                source = ImportSource(batch['id'],contact['source_record_number'],
+                    batch['source_filename'],batch['source_encoding'],batch['source_sha256'],
+                    batch['imported_at'],tuple(zip(headers,values)))
+            detail = ContactDetail(contact['id'],{name:contact[name] for name in field_names},
+                contact['created_at'],contact['updated_at'],phones,emails,addresses,source)
+        connection.execute(f'RELEASE SAVEPOINT {savepoint}')
+        return detail
+    except BaseException:
+        connection.execute(f'ROLLBACK TO SAVEPOINT {savepoint}')
+        connection.execute(f'RELEASE SAVEPOINT {savepoint}')
+        raise
