@@ -255,3 +255,41 @@ def test_password_change_uncertain_outcome_closes_session(database,monkeypatch):
     app.change_password()
     assert app.connection is None
     app.password_button.configure.assert_called_once_with(state='disabled')
+
+
+def settings_app(tmp_path):
+    from contactdock.settings import Settings
+    app=app_without_display(None);app.root=Mock();app.settings=Settings(tmp_path/'settings.json')
+    for name in ('file_label','entry','import_button','search_button','clear_button','new_button','export_button','original_button','backup_button','password_button'):
+        setattr(app,name,Mock())
+    return app
+
+
+def test_database_success_remembers_location(tmp_path,monkeypatch):
+    app=settings_app(tmp_path);path=tmp_path/'new.db'
+    monkeypatch.setattr(gui.filedialog,'asksaveasfilename',lambda **kw:str(path))
+    monkeypatch.setattr(gui.simpledialog,'askstring',lambda *a,**kw:'fictional-password')
+    app.choose_database(True)
+    try:
+        assert app.settings.data['last_database']==str(path)
+        assert app.settings.path.exists()
+    finally:app.connection.close()
+
+
+def test_failed_database_open_does_not_change_remembered_location(tmp_path,monkeypatch):
+    app=settings_app(tmp_path);app.settings.remember_database(tmp_path/'previous.db')
+    before=app.settings.path.read_bytes()
+    monkeypatch.setattr(gui.filedialog,'askopenfilename',lambda **kw:str(tmp_path/'missing.db'))
+    monkeypatch.setattr(gui.simpledialog,'askstring',lambda *a,**kw:'fictional-password')
+    monkeypatch.setattr(gui.messagebox,'showerror',Mock())
+    app.choose_database(False)
+    assert app.connection is None and app.settings.path.read_bytes()==before
+
+
+def test_database_dialog_uses_remembered_location(tmp_path,monkeypatch):
+    app=settings_app(tmp_path);path=tmp_path/'previous.db';path.touch()
+    app.settings.remember_database(path)
+    choose=Mock(return_value='');monkeypatch.setattr(gui.filedialog,'askopenfilename',choose)
+    app.choose_database(False)
+    assert choose.call_args.kwargs['initialdir']==str(tmp_path)
+    assert choose.call_args.kwargs['initialfile']=='previous.db'

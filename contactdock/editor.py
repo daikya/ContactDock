@@ -2,6 +2,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from contactdock.gui import FIELD_LABELS, PHONE_LABELS, ADDRESS_LABELS
+from contactdock.settings import remember_window
 from contactdock.service import ContactInput, ContactValidationError, validate_contact
 
 ADDRESS_LABELS_FIELDS = (
@@ -60,7 +61,9 @@ class ContactEditor:
         ttk.Button(controls,text='キャンセル',command=self.cancel).pack(side='right')
         ttk.Button(controls,text='保存',command=self.save).pack(side='right',padx=8)
         self.window.bind('<Escape>',lambda event:self.cancel())
-        self.window.deiconify();self.window.grab_set()
+        settings=getattr(parent,'contactdock_settings',None)
+        if settings is not None:remember_window(self.window,'editor',settings,parent,default_size=(850,650))
+        self.window.deiconify();self.window.wait_visibility();self.window.grab_set()
 
     def scroll_tab(self,notebook,title):
         outer=ttk.Frame(notebook);notebook.add(outer,text=title)

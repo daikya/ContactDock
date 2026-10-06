@@ -1,6 +1,8 @@
 """Minimal Tkinter UI for encrypted files, CSV import, and browsing."""
 import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog, ttk
+from tkinter import filedialog, messagebox, ttk
+from contactdock import dialogs as simpledialog
+from contactdock.settings import Settings, remember_window
 from collections import Counter
 from pathlib import Path
 
@@ -71,6 +73,9 @@ def import_confirmation(preview):
 class ContactDockApplication:
     def __init__(self, root):
         self.root = root
+        root.withdraw()
+        self.settings=Settings()
+        root.contactdock_settings=self.settings
         self.connection = None
         self.db_path = None
         root.title('ContactDock')
@@ -127,6 +132,8 @@ class ContactDockApplication:
         self.source_text=self.text_tab(notebook,'移行元')
         self.status=ttk.Label(root,text='DBを新規作成、または既存DBを開いてください。',padding=8)
         self.status.pack(fill='x')
+        remember_window(root,'main',self.settings,default_size=(1280,780))
+        root.deiconify()
 
     def text_tab(self, notebook, label):
         frame=ttk.Frame(notebook);notebook.add(frame,text=label)
@@ -146,6 +153,7 @@ class ContactDockApplication:
 
     def choose_database(self, create):
         options=dict(parent=self.root,filetypes=[('ContactDock DB','*.db'),('すべて','*.*')])
+        options.update(self.settings.database_options(create))
         path=(filedialog.asksaveasfilename(defaultextension='.db',**options) if create else filedialog.askopenfilename(**options))
         if not path:return
         password=simpledialog.askstring('パスワード','DBのパスワードを入力してください。',show='*',parent=self.root)
@@ -166,6 +174,8 @@ class ContactDockApplication:
             del password
         if self.connection is not None:self.connection.close()
         self.connection=connection;self.db_path=Path(path)
+        if not self.settings.remember_database(path):
+            messagebox.showwarning('設定保存','DBは開けましたが、保存先を設定ファイルへ保存できませんでした。',parent=self.root)
         self.root.title(f'ContactDock — {self.db_path.name}')
         self.file_label.configure(text=self.db_path.name)
         for widget in (self.entry,self.import_button,self.search_button,self.clear_button,self.new_button,self.export_button,self.original_button,self.backup_button,self.password_button):widget.configure(state='normal')
@@ -289,7 +299,7 @@ class ContactDockApplication:
 
     def choose_source_batch(self,batches):
         if len(batches)==1:return batches[0].id
-        window=tk.Toplevel(self.root);window.title('移行元CSVを選択');window.geometry('760x360')
+        window=tk.Toplevel(self.root);window.withdraw();window.title('移行元CSVを選択');window.geometry('760x360')
         window.transient(self.root)
         tree=ttk.Treeview(window,columns=('file','date','count','encoding'),show='headings',selectmode='browse')
         for key,label,width in (('file','ファイル名',240),('date','取込日時（UTC）',250),('count','件数',80),('encoding','文字コード',90)):
@@ -306,7 +316,9 @@ class ContactDockApplication:
         ttk.Button(controls,text='選択',command=choose).pack(side='right')
         ttk.Button(controls,text='キャンセル',command=window.destroy).pack(side='right',padx=8)
         tree.bind('<Double-1>',lambda event:choose())
-        tree.selection_set(str(batches[-1].id));window.grab_set();window.wait_window()
+        tree.selection_set(str(batches[-1].id))
+        remember_window(window,'source_picker',self.settings,self.root,default_size=(760,360))
+        window.deiconify();window.wait_visibility();window.grab_set();window.wait_window()
         return result
 
     def export_source(self):
@@ -393,6 +405,8 @@ class ContactDockApplication:
 
     def close(self):
         if self.connection is not None:self.connection.close();self.connection=None
+        if not self.settings.try_save():
+            messagebox.showwarning('設定保存','画面位置などの設定を保存できませんでした。保存先のアクセス権や空き容量を確認してください。',parent=self.root)
         self.root.destroy()
 
 
