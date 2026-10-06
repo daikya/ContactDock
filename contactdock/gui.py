@@ -4,10 +4,11 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from collections import Counter
 from pathlib import Path
 
-from contactdock.database import create_database, open_database
+from contactdock.database import create_database, open_database, DatabaseOpenError
 from contactdock.importer import DuplicateImportError, save_csv_preview
 from contactdock.outlook_csv import CsvValidationError, read_outlook_csv
 from contactdock.repository import get_contact, search_contacts
+from contactdock.backup import backup_database
 from contactdock.exporter import export_current_csv, export_original_csv, list_import_batches
 from contactdock.service import save_contact, delete_contact, ContactValidationError, ContactConflictError
 
@@ -92,6 +93,8 @@ class ContactDockApplication:
         self.export_button.pack(side='left')
         self.original_button=ttk.Button(exports,text='移行元CSV原本を出力',command=self.export_source,state='disabled')
         self.original_button.pack(side='left',padx=8)
+        self.backup_button=ttk.Button(exports,text='暗号化DBをバックアップ',command=self.backup_database,state='disabled')
+        self.backup_button.pack(side='left')
         searchbar = ttk.Frame(root,padding=(8,0,8,8));searchbar.pack(fill='x')
         ttk.Label(searchbar,text='検索（メモを含む）').pack(side='left')
         self.query = tk.StringVar()
@@ -162,7 +165,7 @@ class ContactDockApplication:
         self.connection=connection;self.db_path=Path(path)
         self.root.title(f'ContactDock — {self.db_path.name}')
         self.file_label.configure(text=self.db_path.name)
-        for widget in (self.entry,self.import_button,self.search_button,self.clear_button,self.new_button,self.export_button,self.original_button):widget.configure(state='normal')
+        for widget in (self.entry,self.import_button,self.search_button,self.clear_button,self.new_button,self.export_button,self.original_button,self.backup_button):widget.configure(state='normal')
         self.query.set('');self.refresh()
 
     def refresh(self):
@@ -327,6 +330,29 @@ class ContactDockApplication:
         except Exception:
             messagebox.showerror('原本出力','ファイルを保存できません。保存先やファイルの使用状況を確認してください。',parent=self.root);return
         messagebox.showinfo('原本出力','移行元CSV原本を出力しました。',parent=self.root)
+
+    def backup_database(self):
+        if self.connection is None:return
+        path=filedialog.asksaveasfilename(parent=self.root,defaultextension='.db',
+            initialfile='ContactDock_backup.db',filetypes=[('暗号化DB','*.db')])
+        if not path:return
+        password=simpledialog.askstring('バックアップ',
+            '現在のDBのパスワードを入力してください。',show='*',parent=self.root)
+        if password is None:return
+        try:
+            backup_database(self.connection,path,password,overwrite=True)
+        except DatabaseOpenError:
+            messagebox.showerror('バックアップ','現在のDBを開けません。パスワードやDBの状態を確認してください。',parent=self.root)
+            return
+        except ValueError as exc:
+            messagebox.showerror('バックアップ',str(exc),parent=self.root);return
+        except Exception:
+            messagebox.showerror('バックアップ','保存できません。保存先やファイルの使用状況を確認してください。',parent=self.root);return
+        finally:
+            del password
+        messagebox.showinfo('バックアップ',
+            '暗号化DB全体を保存しました。\n同じパスワードで「DBを開く」から開けます。\n'
+            '削除済みデータと移行元CSV原本も含まれます。',parent=self.root)
 
     def close(self):
         if self.connection is not None:self.connection.close();self.connection=None

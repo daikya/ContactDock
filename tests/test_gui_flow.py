@@ -174,3 +174,32 @@ def test_original_export_byte_exact(database,tmp_path,monkeypatch):
     monkeypatch.setattr(gui.messagebox,'showinfo',Mock())
     app.export_source()
     assert path.read_bytes()==p.original_csv
+
+@pytest.mark.parametrize('cancel_at',['file','password'])
+def test_backup_cancel(database,tmp_path,monkeypatch,cancel_at):
+    app=app_without_display(database);path=tmp_path/'backup.db'
+    monkeypatch.setattr(gui.filedialog,'asksaveasfilename',lambda **kw:'' if cancel_at=='file' else str(path))
+    monkeypatch.setattr(gui.simpledialog,'askstring',lambda *a,**kw:None)
+    app.backup_database()
+    assert not path.exists()
+
+
+def test_backup_gui_saves_and_reports(database,tmp_path,monkeypatch):
+    from contactdock.database import open_database
+    app=app_without_display(database);path=tmp_path/'backup.db'
+    monkeypatch.setattr(gui.filedialog,'asksaveasfilename',lambda **kw:str(path))
+    monkeypatch.setattr(gui.simpledialog,'askstring',lambda *a,**kw:'fictional-gui-password')
+    info=Mock();monkeypatch.setattr(gui.messagebox,'showinfo',info)
+    app.backup_database()
+    c=open_database(path,'fictional-gui-password');c.close()
+    info.assert_called_once()
+
+
+def test_backup_gui_wrong_password_keeps_existing_file(database,tmp_path,monkeypatch):
+    app=app_without_display(database);path=tmp_path/'backup.db';path.write_bytes(b'keep')
+    monkeypatch.setattr(gui.filedialog,'asksaveasfilename',lambda **kw:str(path))
+    monkeypatch.setattr(gui.simpledialog,'askstring',lambda *a,**kw:'wrong-password')
+    error=Mock();monkeypatch.setattr(gui.messagebox,'showerror',error)
+    app.backup_database()
+    assert path.read_bytes()==b'keep'
+    error.assert_called_once()
