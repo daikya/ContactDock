@@ -76,3 +76,31 @@ def test_confirmed_import_refreshes_list(database,tmp_path,monkeypatch):
     app.import_csv()
     assert database.execute('SELECT count(*) FROM contacts').fetchone()[0]==1
     app.query.set.assert_called_once_with('');app.refresh.assert_called_once()
+
+
+def test_new_editor_cancel_does_not_save(database,monkeypatch):
+    from contactdock import editor
+    app=app_without_display(database)
+    fake=Mock();fake.show.return_value=None
+    monkeypatch.setattr(editor,'ContactEditor',lambda *args,**kw:fake)
+    app.edit_contact(False)
+    assert database.execute('SELECT count(*) FROM contacts').fetchone()[0]==0
+    app.refresh.assert_not_called()
+
+
+def test_new_editor_save_persists_and_selects_contact(database,monkeypatch):
+    from contactdock import editor
+    from contactdock.service import ContactInput
+    app=app_without_display(database);app.tree=Mock();app.tree.exists.return_value=True
+    app.select_contact=Mock()
+    class FakeEditor:
+        def __init__(self,parent,detail,save_callback):
+            self.window=Mock();self.save_callback=save_callback
+        def show(self):
+            assert self.save_callback(ContactInput({'company_name':'架空会社'}))
+    monkeypatch.setattr(editor,'ContactEditor',FakeEditor)
+    app.edit_contact(False)
+    row=database.execute('SELECT id,company_name FROM contacts').fetchone()
+    assert row[1]=='架空会社'
+    app.refresh.assert_called_once();app.tree.selection_set.assert_called_once_with(str(row[0]))
+    app.select_contact.assert_called_once()

@@ -8,6 +8,7 @@ from contactdock.database import create_database, open_database
 from contactdock.importer import DuplicateImportError, save_csv_preview
 from contactdock.outlook_csv import CsvValidationError, read_outlook_csv
 from contactdock.repository import get_contact, search_contacts
+from contactdock.service import save_contact, ContactValidationError, ContactConflictError
 
 PHONE_LABELS = {
     'work_phone':'会社電話', 'company_main_phone':'会社代表電話', 'work_fax':'会社FAX',
@@ -78,6 +79,10 @@ class ContactDockApplication:
         ttk.Button(toolbar,text='DBを開く',command=lambda:self.choose_database(False)).pack(side='left',padx=6)
         self.import_button = ttk.Button(toolbar,text='CSV取込',command=self.import_csv,state='disabled')
         self.import_button.pack(side='left')
+        self.new_button=ttk.Button(toolbar,text='新規登録',command=lambda:self.edit_contact(False),state='disabled')
+        self.new_button.pack(side='left',padx=6)
+        self.edit_button=ttk.Button(toolbar,text='編集',command=lambda:self.edit_contact(True),state='disabled')
+        self.edit_button.pack(side='left')
         self.file_label = ttk.Label(toolbar,text='DB未選択');self.file_label.pack(side='left',padx=12)
         searchbar = ttk.Frame(root,padding=(8,0,8,8));searchbar.pack(fill='x')
         ttk.Label(searchbar,text='検索（メモを含む）').pack(side='left')
@@ -122,6 +127,7 @@ class ContactDockApplication:
 
     def clear_detail(self):
         self.put_text(self.detail_text,'');self.put_text(self.source_text,'')
+        self.edit_button.configure(state='disabled')
 
     def choose_database(self, create):
         options=dict(parent=self.root,filetypes=[('ContactDock DB','*.db'),('すべて','*.*')])
@@ -147,7 +153,7 @@ class ContactDockApplication:
         self.connection=connection;self.db_path=Path(path)
         self.root.title(f'ContactDock — {self.db_path.name}')
         self.file_label.configure(text=self.db_path.name)
-        for widget in (self.entry,self.import_button,self.search_button,self.clear_button):widget.configure(state='normal')
+        for widget in (self.entry,self.import_button,self.search_button,self.clear_button,self.new_button):widget.configure(state='normal')
         self.query.set('');self.refresh()
 
     def refresh(self):
@@ -173,6 +179,7 @@ class ContactDockApplication:
             self.clear_detail();messagebox.showerror('詳細','連絡先または移行元情報を読み取れません。',parent=self.root);return
         if detail is None:self.clear_detail();return
         self.put_text(self.detail_text,format_detail(detail));self.put_text(self.source_text,format_source(detail))
+        self.edit_button.configure(state='normal')
 
     def import_csv(self):
         if self.connection is None:return
@@ -192,6 +199,40 @@ class ContactDockApplication:
             messagebox.showerror('CSV取込','取込に失敗しました。入力ファイルやDBの状態を確認してください。',parent=self.root);return
         self.query.set('');self.refresh()
         messagebox.showinfo('CSV取込',f'{result.contact_count:,}件を取り込みました。',parent=self.root)
+
+    def edit_contact(self, editing):
+        if self.connection is None:return
+        from contactdock.editor import ContactEditor
+        detail=None
+        if editing:
+            selected=self.tree.selection()
+            if not selected:return
+            try:detail=get_contact(self.connection,int(selected[0]))
+            except Exception:
+                messagebox.showerror('編集','連絡先を読み取れません。',parent=self.root);return
+            if detail is None:self.refresh();return
+        saved_id=None
+
+        def persist(draft):
+            nonlocal saved_id
+            try:
+                saved_id=save_contact(self.connection,draft,
+                    detail.id if detail else None,detail.updated_at if detail else None)
+                return True
+            except (ContactValidationError,ContactConflictError) as exc:
+                messagebox.showerror('保存の確認',str(exc),parent=editor.window)
+            except Exception:
+                messagebox.showerror('保存','保存に失敗しました。入力内容はこの画面に残しています。',parent=editor.window)
+            return False
+
+        editor=ContactEditor(self.root,detail,save_callback=persist)
+        editor.show()
+        if saved_id is not None:
+            self.query.set('');self.refresh()
+            identifier=str(saved_id)
+            if self.tree.exists(identifier):
+                self.tree.selection_set(identifier);self.tree.focus(identifier);self.tree.see(identifier)
+                self.select_contact()
 
     def close(self):
         if self.connection is not None:self.connection.close();self.connection=None
