@@ -9,6 +9,7 @@ from contactdock.importer import DuplicateImportError, save_csv_preview
 from contactdock.outlook_csv import CsvValidationError, read_outlook_csv
 from contactdock.repository import get_contact, search_contacts
 from contactdock.backup import backup_database
+from contactdock.password import change_database_password, PasswordChangeError
 from contactdock.exporter import export_current_csv, export_original_csv, list_import_batches
 from contactdock.service import save_contact, delete_contact, ContactValidationError, ContactConflictError
 
@@ -95,6 +96,8 @@ class ContactDockApplication:
         self.original_button.pack(side='left',padx=8)
         self.backup_button=ttk.Button(exports,text='暗号化DBをバックアップ',command=self.backup_database,state='disabled')
         self.backup_button.pack(side='left')
+        self.password_button=ttk.Button(exports,text='DBパスワード変更',command=self.change_password,state='disabled')
+        self.password_button.pack(side='left',padx=8)
         searchbar = ttk.Frame(root,padding=(8,0,8,8));searchbar.pack(fill='x')
         ttk.Label(searchbar,text='検索（メモを含む）').pack(side='left')
         self.query = tk.StringVar()
@@ -165,7 +168,7 @@ class ContactDockApplication:
         self.connection=connection;self.db_path=Path(path)
         self.root.title(f'ContactDock — {self.db_path.name}')
         self.file_label.configure(text=self.db_path.name)
-        for widget in (self.entry,self.import_button,self.search_button,self.clear_button,self.new_button,self.export_button,self.original_button,self.backup_button):widget.configure(state='normal')
+        for widget in (self.entry,self.import_button,self.search_button,self.clear_button,self.new_button,self.export_button,self.original_button,self.backup_button,self.password_button):widget.configure(state='normal')
         self.query.set('');self.refresh()
 
     def refresh(self):
@@ -353,6 +356,40 @@ class ContactDockApplication:
         messagebox.showinfo('バックアップ',
             '暗号化DB全体を保存しました。\n同じパスワードで「DBを開く」から開けます。\n'
             '削除済みデータと移行元CSV原本も含まれます。',parent=self.root)
+
+    def change_password(self):
+        if self.connection is None:return
+        current=new=repeated=None
+        try:
+            current=simpledialog.askstring('DBパスワード変更','現在のパスワードを入力してください。',show='*',parent=self.root)
+            if current is None:return
+            new=simpledialog.askstring('DBパスワード変更','新しいパスワードを入力してください。',show='*',parent=self.root)
+            if new is None:return
+            repeated=simpledialog.askstring('DBパスワード変更','新しいパスワードをもう一度入力してください。',show='*',parent=self.root)
+            if repeated is None:return
+            if new!=repeated:
+                messagebox.showerror('DBパスワード変更','新しいパスワードが一致しません。',parent=self.root);return
+            if not messagebox.askyesno('DBパスワード変更',
+                '現在開いているDBのパスワードを変更します。\n'
+                '既存のバックアップのパスワードは変わりません。\n'
+                '変更後は新しいパスワードで開いてください。\n\n変更しますか？',parent=self.root,default='no'):return
+            change_database_password(self.connection,current,new)
+        except DatabaseOpenError:
+            messagebox.showerror('DBパスワード変更','現在のDBを開けません。パスワードやDBの状態を確認してください。',parent=self.root);return
+        except PasswordChangeError as exc:
+            self.connection.close();self.connection=None
+            for widget in (self.entry,self.import_button,self.search_button,self.clear_button,self.new_button,self.export_button,self.original_button,self.backup_button,self.password_button):widget.configure(state='disabled')
+            self.tree.delete(*self.tree.get_children());self.clear_detail()
+            self.file_label.configure(text='DB未選択')
+            self.status.configure(text='パスワード変更の状態を確認するため、DBを開き直してください。')
+            messagebox.showerror('DBパスワード変更',str(exc),parent=self.root);return
+        except ValueError as exc:
+            messagebox.showerror('DBパスワード変更',str(exc),parent=self.root);return
+        except Exception:
+            messagebox.showerror('DBパスワード変更','変更できません。DBの使用状況を確認してください。',parent=self.root);return
+        finally:
+            del current,new,repeated
+        messagebox.showinfo('DBパスワード変更','パスワードを変更し、データの整合性を確認しました。',parent=self.root)
 
     def close(self):
         if self.connection is not None:self.connection.close();self.connection=None

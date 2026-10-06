@@ -203,3 +203,55 @@ def test_backup_gui_wrong_password_keeps_existing_file(database,tmp_path,monkeyp
     app.backup_database()
     assert path.read_bytes()==b'keep'
     error.assert_called_once()
+
+
+@pytest.mark.parametrize('cancel_at',[0,1,2,3])
+def test_password_change_cancelled(database,tmp_path,monkeypatch,cancel_at):
+    app=app_without_display(database)
+    responses=['fictional-gui-password','fictional-new','fictional-new']
+    if cancel_at<3:responses[cancel_at]=None
+    answers=iter(responses)
+    monkeypatch.setattr(gui.simpledialog,'askstring',lambda *a,**kw:next(answers))
+    monkeypatch.setattr(gui.messagebox,'askyesno',lambda *a,**kw:False)
+    change=Mock();monkeypatch.setattr(gui,'change_database_password',change)
+    app.change_password();change.assert_not_called()
+
+
+def test_password_change_gui_success(database,tmp_path,monkeypatch):
+    from contactdock.database import open_database,DatabaseOpenError
+    app=app_without_display(database)
+    answers=iter(['fictional-gui-password','fictional-new','fictional-new'])
+    monkeypatch.setattr(gui.simpledialog,'askstring',lambda *a,**kw:next(answers))
+    monkeypatch.setattr(gui.messagebox,'askyesno',lambda *a,**kw:True)
+    info=Mock();monkeypatch.setattr(gui.messagebox,'showinfo',info)
+    app.change_password();info.assert_called_once()
+    c=open_database(tmp_path/'fictional.db','fictional-new');c.close()
+    with pytest.raises(DatabaseOpenError):open_database(tmp_path/'fictional.db','fictional-gui-password')
+
+
+@pytest.mark.parametrize('answers',[['fictional-gui-password','one','two'],['wrong','new','new']])
+def test_password_change_gui_invalid_input(database,tmp_path,monkeypatch,answers):
+    from contactdock.database import open_database
+    app=app_without_display(database);responses=iter(answers)
+    monkeypatch.setattr(gui.simpledialog,'askstring',lambda *a,**kw:next(responses))
+    monkeypatch.setattr(gui.messagebox,'askyesno',lambda *a,**kw:True)
+    error=Mock();monkeypatch.setattr(gui.messagebox,'showerror',error)
+    app.change_password();error.assert_called_once()
+    c=open_database(tmp_path/'fictional.db','fictional-gui-password');c.close()
+
+
+def test_password_change_uncertain_outcome_closes_session(database,monkeypatch):
+    app=app_without_display(database)
+    for name in ('entry','import_button','search_button','clear_button','new_button','export_button','original_button','backup_button','password_button','file_label','status','tree'):
+        setattr(app,name,Mock())
+    app.clear_detail=Mock()
+    app.tree.get_children.return_value=()
+    answers=iter(['fictional-gui-password','new','new'])
+    monkeypatch.setattr(gui.simpledialog,'askstring',lambda *a,**kw:next(answers))
+    monkeypatch.setattr(gui.messagebox,'askyesno',lambda *a,**kw:True)
+    monkeypatch.setattr(gui.messagebox,'showerror',Mock())
+    def fail(*args):raise gui.PasswordChangeError('fictional uncertain outcome')
+    monkeypatch.setattr(gui,'change_database_password',fail)
+    app.change_password()
+    assert app.connection is None
+    app.password_button.configure.assert_called_once_with(state='disabled')
