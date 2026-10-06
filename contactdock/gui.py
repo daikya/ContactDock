@@ -8,6 +8,7 @@ from contactdock.database import create_database, open_database
 from contactdock.importer import DuplicateImportError, save_csv_preview
 from contactdock.outlook_csv import CsvValidationError, read_outlook_csv
 from contactdock.repository import get_contact, search_contacts
+from contactdock.exporter import export_current_csv, export_original_csv, list_import_batches
 from contactdock.service import save_contact, delete_contact, ContactValidationError, ContactConflictError
 
 PHONE_LABELS = {
@@ -86,6 +87,11 @@ class ContactDockApplication:
         self.delete_button=ttk.Button(toolbar,text='削除',command=self.delete_selected_contact,state='disabled')
         self.delete_button.pack(side='left',padx=6)
         self.file_label = ttk.Label(toolbar,text='DB未選択');self.file_label.pack(side='left',padx=12)
+        exports=ttk.Frame(root,padding=(8,0,8,8));exports.pack(fill='x')
+        self.export_button=ttk.Button(exports,text='現在の連絡先をCSV出力',command=self.export_contacts,state='disabled')
+        self.export_button.pack(side='left')
+        self.original_button=ttk.Button(exports,text='移行元CSV原本を出力',command=self.export_source,state='disabled')
+        self.original_button.pack(side='left',padx=8)
         searchbar = ttk.Frame(root,padding=(8,0,8,8));searchbar.pack(fill='x')
         ttk.Label(searchbar,text='検索（メモを含む）').pack(side='left')
         self.query = tk.StringVar()
@@ -156,7 +162,7 @@ class ContactDockApplication:
         self.connection=connection;self.db_path=Path(path)
         self.root.title(f'ContactDock — {self.db_path.name}')
         self.file_label.configure(text=self.db_path.name)
-        for widget in (self.entry,self.import_button,self.search_button,self.clear_button,self.new_button):widget.configure(state='normal')
+        for widget in (self.entry,self.import_button,self.search_button,self.clear_button,self.new_button,self.export_button,self.original_button):widget.configure(state='normal')
         self.query.set('');self.refresh()
 
     def refresh(self):
@@ -257,6 +263,70 @@ class ContactDockApplication:
         except Exception:
             messagebox.showerror('削除','削除に失敗しました。DBの状態を確認してください。',parent=self.root);return
         self.refresh()
+
+    def export_contacts(self):
+        if self.connection is None:return
+        path=filedialog.asksaveasfilename(parent=self.root,defaultextension='.csv',
+            initialfile='ContactDock_contacts.csv',filetypes=[('CSV','*.csv')])
+        if not path:return
+        text=('削除済みを除く、現在の全連絡先を出力します（検索結果だけではありません）。\n'
+              '形式：ContactDock CSV／UTF-8（BOM付き）\n'
+              'このCSVは現在のOutlook CSV取込画面には対応していません。\n\n'
+              '出力ファイルは暗号化されず、パスワードなしで読めます。\n\n出力しますか？')
+        if not messagebox.askyesno('現在の連絡先のCSV出力',text,parent=self.root,default='no'):return
+        try:count=export_current_csv(self.connection,path,overwrite=True)
+        except ValueError as exc:
+            messagebox.showerror('CSV出力',str(exc),parent=self.root);return
+        except Exception:
+            messagebox.showerror('CSV出力','ファイルを保存できません。保存先やファイルの使用状況を確認してください。',parent=self.root);return
+        messagebox.showinfo('CSV出力',f'{count:,}件を出力しました。',parent=self.root)
+
+    def choose_source_batch(self,batches):
+        if len(batches)==1:return batches[0].id
+        window=tk.Toplevel(self.root);window.title('移行元CSVを選択');window.geometry('760x360')
+        window.transient(self.root)
+        tree=ttk.Treeview(window,columns=('file','date','count','encoding'),show='headings',selectmode='browse')
+        for key,label,width in (('file','ファイル名',240),('date','取込日時（UTC）',250),('count','件数',80),('encoding','文字コード',90)):
+            tree.heading(key,text=label);tree.column(key,width=width)
+        scroll=ttk.Scrollbar(window,command=tree.yview);tree.configure(yscrollcommand=scroll.set)
+        scroll.pack(side='right',fill='y');tree.pack(fill='both',expand=True,padx=8,pady=8)
+        for batch in batches:tree.insert('', 'end',iid=str(batch.id),values=(batch.filename,batch.imported_at,batch.record_count,batch.encoding))
+        result=None
+        def choose():
+            nonlocal result
+            selected=tree.selection()
+            if selected:result=int(selected[0]);window.destroy()
+        controls=ttk.Frame(window,padding=8);controls.pack(fill='x')
+        ttk.Button(controls,text='選択',command=choose).pack(side='right')
+        ttk.Button(controls,text='キャンセル',command=window.destroy).pack(side='right',padx=8)
+        tree.bind('<Double-1>',lambda event:choose())
+        tree.selection_set(str(batches[-1].id));window.grab_set();window.wait_window()
+        return result
+
+    def export_source(self):
+        if self.connection is None:return
+        try:batches=list_import_batches(self.connection)
+        except Exception:
+            messagebox.showerror('原本出力','取込情報を読み取れません。',parent=self.root);return
+        if not batches:
+            messagebox.showinfo('原本出力','保存されている移行元CSVはありません。',parent=self.root);return
+        identifier=self.choose_source_batch(batches)
+        if identifier is None:return
+        batch=next(batch for batch in batches if batch.id==identifier)
+        path=filedialog.asksaveasfilename(parent=self.root,defaultextension='.csv',
+            initialfile=Path(batch.filename).name,filetypes=[('CSV','*.csv')])
+        if not path:return
+        text=(f'元ファイル：{batch.filename}\n件数：{batch.record_count:,}件\n文字コード：{batch.encoding}\n\n'
+              '取込時の原本をそのまま出力します。\n'
+              '取込後の編集は反映されず、削除した連絡先も原本に含まれます。\n'
+              '出力ファイルは暗号化されず、パスワードなしで読めます。\n\n出力しますか？')
+        if not messagebox.askyesno('移行元CSV原本の出力',text,parent=self.root,default='no'):return
+        try:export_original_csv(self.connection,identifier,path,overwrite=True)
+        except ValueError as exc:
+            messagebox.showerror('原本出力',str(exc),parent=self.root);return
+        except Exception:
+            messagebox.showerror('原本出力','ファイルを保存できません。保存先やファイルの使用状況を確認してください。',parent=self.root);return
+        messagebox.showinfo('原本出力','移行元CSV原本を出力しました。',parent=self.root)
 
     def close(self):
         if self.connection is not None:self.connection.close();self.connection=None

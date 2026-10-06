@@ -136,3 +136,41 @@ def test_delete_without_selection_does_not_prompt(database,monkeypatch):
     confirm=Mock();monkeypatch.setattr(gui.messagebox,'askyesno',confirm)
     app.delete_selected_contact()
     confirm.assert_not_called()
+
+
+def test_export_cancel_does_not_create_file(database,tmp_path,monkeypatch):
+    app=app_without_display(database);path=tmp_path/'cancel.csv'
+    monkeypatch.setattr(gui.filedialog,'asksaveasfilename',lambda **kw:str(path))
+    confirm=Mock(return_value=False);monkeypatch.setattr(gui.messagebox,'askyesno',confirm)
+    app.export_contacts()
+    assert not path.exists() and '暗号化されず' in confirm.call_args.args[1]
+
+
+def test_confirmed_export_writes_file(database,tmp_path,monkeypatch):
+    from contactdock.service import ContactInput,save_contact
+    save_contact(database,ContactInput({'note':'架空メモ'}))
+    app=app_without_display(database);path=tmp_path/'current.csv'
+    monkeypatch.setattr(gui.filedialog,'asksaveasfilename',lambda **kw:str(path))
+    monkeypatch.setattr(gui.messagebox,'askyesno',Mock(return_value=True))
+    monkeypatch.setattr(gui.messagebox,'showinfo',Mock())
+    app.export_contacts()
+    assert path.exists() and '架空メモ' in path.read_text(encoding='utf-8-sig')
+
+
+def test_original_export_cancel_does_not_create_file(database,tmp_path,monkeypatch):
+    p=read_outlook_csv(csv_file(tmp_path));save_csv_preview(database,p)
+    app=app_without_display(database);path=tmp_path/'original.csv'
+    monkeypatch.setattr(gui.filedialog,'asksaveasfilename',lambda **kw:str(path))
+    monkeypatch.setattr(gui.messagebox,'askyesno',Mock(return_value=False))
+    app.export_source()
+    assert not path.exists()
+
+
+def test_original_export_byte_exact(database,tmp_path,monkeypatch):
+    p=read_outlook_csv(csv_file(tmp_path));save_csv_preview(database,p)
+    app=app_without_display(database);path=tmp_path/'original.csv'
+    monkeypatch.setattr(gui.filedialog,'asksaveasfilename',lambda **kw:str(path))
+    monkeypatch.setattr(gui.messagebox,'askyesno',Mock(return_value=True))
+    monkeypatch.setattr(gui.messagebox,'showinfo',Mock())
+    app.export_source()
+    assert path.read_bytes()==p.original_csv
