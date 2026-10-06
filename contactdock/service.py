@@ -114,3 +114,29 @@ def save_contact(connection, draft, contact_id=None, expected_updated_at=None):
         connection.rollback()
         raise
     return contact_id
+
+
+def delete_contact(connection, contact_id, expected_updated_at):
+    """Soft-delete an active contact; keep all related values and import source.
+
+    The expected timestamp is read before the user confirms, preventing deletion
+    of a contact that changed while the confirmation was open.
+    """
+    if connection.in_transaction:
+        raise ContactValidationError('既存のトランザクションを終了してから削除してください。')
+    if isinstance(contact_id,bool) or not isinstance(contact_id,int):
+        raise ContactValidationError('連絡先IDは整数で指定してください。')
+    if not isinstance(expected_updated_at,str) or not expected_updated_at:
+        raise ContactValidationError('確認時の更新日時が必要です。')
+    connection.execute('BEGIN IMMEDIATE')
+    try:
+        timestamp=datetime.now(timezone.utc).isoformat(timespec='microseconds')
+        cursor=connection.execute('''UPDATE contacts SET deleted_at=?,updated_at=?
+            WHERE id=? AND deleted_at IS NULL AND updated_at=?''',
+            (timestamp,timestamp,contact_id,expected_updated_at))
+        if cursor.rowcount!=1:
+            raise ContactConflictError('連絡先が更新・削除されています。一覧から確認し直してください。')
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise

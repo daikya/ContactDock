@@ -8,7 +8,7 @@ from contactdock.database import create_database, open_database
 from contactdock.importer import DuplicateImportError, save_csv_preview
 from contactdock.outlook_csv import CsvValidationError, read_outlook_csv
 from contactdock.repository import get_contact, search_contacts
-from contactdock.service import save_contact, ContactValidationError, ContactConflictError
+from contactdock.service import save_contact, delete_contact, ContactValidationError, ContactConflictError
 
 PHONE_LABELS = {
     'work_phone':'会社電話', 'company_main_phone':'会社代表電話', 'work_fax':'会社FAX',
@@ -83,6 +83,8 @@ class ContactDockApplication:
         self.new_button.pack(side='left',padx=6)
         self.edit_button=ttk.Button(toolbar,text='編集',command=lambda:self.edit_contact(True),state='disabled')
         self.edit_button.pack(side='left')
+        self.delete_button=ttk.Button(toolbar,text='削除',command=self.delete_selected_contact,state='disabled')
+        self.delete_button.pack(side='left',padx=6)
         self.file_label = ttk.Label(toolbar,text='DB未選択');self.file_label.pack(side='left',padx=12)
         searchbar = ttk.Frame(root,padding=(8,0,8,8));searchbar.pack(fill='x')
         ttk.Label(searchbar,text='検索（メモを含む）').pack(side='left')
@@ -128,6 +130,7 @@ class ContactDockApplication:
     def clear_detail(self):
         self.put_text(self.detail_text,'');self.put_text(self.source_text,'')
         self.edit_button.configure(state='disabled')
+        self.delete_button.configure(state='disabled')
 
     def choose_database(self, create):
         options=dict(parent=self.root,filetypes=[('ContactDock DB','*.db'),('すべて','*.*')])
@@ -180,6 +183,7 @@ class ContactDockApplication:
         if detail is None:self.clear_detail();return
         self.put_text(self.detail_text,format_detail(detail));self.put_text(self.source_text,format_source(detail))
         self.edit_button.configure(state='normal')
+        self.delete_button.configure(state='normal')
 
     def import_csv(self):
         if self.connection is None:return
@@ -233,6 +237,26 @@ class ContactDockApplication:
             if self.tree.exists(identifier):
                 self.tree.selection_set(identifier);self.tree.focus(identifier);self.tree.see(identifier)
                 self.select_contact()
+
+    def delete_selected_contact(self):
+        if self.connection is None:return
+        selected=self.tree.selection()
+        if not selected:return
+        try:
+            detail=get_contact(self.connection,int(selected[0]))
+            if detail is None:self.refresh();return
+            name=detail.display_name or '（氏名未設定）'
+            company=detail.fields['company_name'] or '（会社名未設定）'
+            text=(f'氏名：{name}\n会社名：{company}\n連絡先ID：{detail.id}\n\n'
+                  'この連絡先を一覧・検索から除外します。\n'
+                  'データは内部に保持します。復元画面はまだありません。\n\n削除しますか？')
+            if not messagebox.askyesno('連絡先の削除',text,parent=self.root):return
+            delete_contact(self.connection,detail.id,detail.updated_at)
+        except (ContactValidationError,ContactConflictError) as exc:
+            messagebox.showerror('削除の確認',str(exc),parent=self.root);self.refresh();return
+        except Exception:
+            messagebox.showerror('削除','削除に失敗しました。DBの状態を確認してください。',parent=self.root);return
+        self.refresh()
 
     def close(self):
         if self.connection is not None:self.connection.close();self.connection=None

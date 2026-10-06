@@ -104,3 +104,35 @@ def test_new_editor_save_persists_and_selects_contact(database,monkeypatch):
     assert row[1]=='架空会社'
     app.refresh.assert_called_once();app.tree.selection_set.assert_called_once_with(str(row[0]))
     app.select_contact.assert_called_once()
+
+
+def selected_delete_app(c):
+    from contactdock.service import ContactInput,save_contact
+    identifier=save_contact(c,ContactInput({'family_name':'架空','company_name':'架空会社'}))
+    app=app_without_display(c);app.tree=Mock();app.tree.selection.return_value=(str(identifier),)
+    return app,identifier
+
+
+def test_delete_confirmation_cancel_keeps_contact(database,monkeypatch):
+    app,identifier=selected_delete_app(database)
+    confirm=Mock(return_value=False);monkeypatch.setattr(gui.messagebox,'askyesno',confirm)
+    app.delete_selected_contact()
+    assert get_contact(database,identifier) is not None
+    app.refresh.assert_not_called()
+    message=confirm.call_args.args[1]
+    assert '架空会社' in message and 'データは内部に保持' in message
+
+
+def test_delete_confirmation_accepts_then_refreshes(database,monkeypatch):
+    app,identifier=selected_delete_app(database)
+    monkeypatch.setattr(gui.messagebox,'askyesno',Mock(return_value=True))
+    app.delete_selected_contact()
+    assert get_contact(database,identifier) is None
+    app.refresh.assert_called_once()
+
+
+def test_delete_without_selection_does_not_prompt(database,monkeypatch):
+    app=app_without_display(database);app.tree=Mock();app.tree.selection.return_value=()
+    confirm=Mock();monkeypatch.setattr(gui.messagebox,'askyesno',confirm)
+    app.delete_selected_contact()
+    confirm.assert_not_called()
