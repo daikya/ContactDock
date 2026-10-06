@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "contactdock"
+version = "0.1.0"
+description = "Local encrypted contact management"
+requires-python = ">=3.12"
+authors = [{name = "daikya"}]
+dependencies = ["sqlcipher3==0.6.3"]
+
+[project.optional-dependencies]
+dev = ["pytest>=9,<10"]
+
+[tool.setuptools.packages.find]
+include = ["contactdock*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

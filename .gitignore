@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+*.spec
+*.db
+*.db-*
+*.sqlite*
+*.csv
+*.pst
+*.vcf
