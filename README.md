@@ -6,7 +6,7 @@
 ## Version 0.1.0
 
 暗号化DBの作成、既存DBのオープン、最小5テーブルの初期化とpytest。
-CSVの読取・構造検証・通常項目への変換まで対応。DBへの取込保存・GUI・検索・編集はこれから実装する。SQLCipherは0.6.3のPythonパッケージを使用。
+CSVの読取・構造検証・通常項目への変換まで対応。暗号化DBへの一括取込保存まで対応。GUI・検索・編集はこれから実装する。SQLCipherは0.6.3のPythonパッケージを使用。
 Python 3.12を検証対象とする。
 
 ## Windowsでの準備と検証
@@ -35,3 +35,11 @@ py -3.12 -m venv .venv
 今回の95列のヘッダーをすべて要求し、列順の違いは許容する。未知列も元値へ保持し、非空値は警告する。
 CP932以外の文字コードは当初の対応対象外。警告や結果には個人情報が含まれうるため、結果全体をログへ出力しない。
 単体検証：`python -m pytest -q tests/test_outlook_csv.py`。
+
+## CSVの一括保存
+
+`contactdock.importer.save_csv_preview(connection, preview)`は、読取結果を一つのトランザクションで保存する。
+取込実行前に利用側で件数・警告を確認すること。GUIの確認画面は未実装。
+同一CSVは`DuplicateImportError`で拒否し、変更CSVは新規追加する。保存失敗時は全体をロールバックする。
+呼び出し前に既存のトランザクションを終了し、外部キー検証を有効にする。
+単体検証：`python -m pytest -q tests/test_importer.py`。
