@@ -123,7 +123,7 @@ ZIPに含まれない既存ファイル・フォルダーは削除されない�
 ［現在の連絡先をCSV出力］は、削除済みを除く全連絡先を出力する（現在の検索結果に限定しない）。
 形式はContactDock CSV／UTF-8 BOM付き、1件1行。氏名・所属・メモ・Webページ・誕生日・登録／更新日時・内部IDと全電話・メール・住所を出す。
 電話・メールは実データに応じて列を増やすため、会社電話3やメール4以降も省略しない。メモの改行・引用符・空白、先頭ゼロもファイル中の文字列として保持する。
-このCSVは旧Outlookの95列CP932形式ではなく、現時点のCSV取込には未対応。移行元だけの項目は現在値へ混ぜない。
+このCSVは旧Outlookの95列CP932形式ではなく、CSV取込から新しい連絡先として再取込できる。移行元だけの項目は現在値へ混ぜない。
 
 ［移行元CSV原本を出力］は保存済みの元バイト列をそのまま再出力する。複数の取込単位がある場合は選択する。
 取込後の編集は反映されず、取込後に削除した連絡先も原本には含まれる。元の文字コード・引用符・改行も保持する。
@@ -157,3 +157,63 @@ SQLCipherの `PRAGMA rekey` で暗号化を変更し、新しいパスワード�
 正常に作成・開いたDBのフルパスとフォルダを記録し、次回の「DBを開く」はそのフォルダとファイル名、「DB新規作成」はそのフォルダを初期選択します。設定したフォルダが存在しない場合は通常のファイル選択へ戻ります。DBは自動で開かず、パスワード入力は毎回必要です。パスワードと連絡先の内容はJSONへ保存しません。
 
 Windows標準のファイル選択・確認ダイアログはWindows側の位置制御を使用し、その位置はこのJSONへ保存しません。
+
+## Windows本体exeのビルドと検証
+
+Windows上のPython 3.12仮想環境でビルドします。`run_contactdock.py` は本体GUIを起動する専用入口です。SQLCipher検証用exeで確認したPyInstaller 6.22.3をビルド用追加依存に固定します。
+
+```powershell
+cd C:\Users\takesuzu\MyPythonCode\ContactDock
+.\.venv\Scripts\python.exe -m pip install -e ".[dev,build]"
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m PyInstaller --clean --onedir --console --noupx --collect-all sqlcipher3 --icon contactdock/assets/contactdock.ico --add-data "contactdock/assets:contactdock/assets" --name ContactDockConsole run_contactdock.py
+.\dist\ContactDockConsole\ContactDockConsole.exe
+```
+
+まずコンソール付きで確認します。アプリを終了するまでPowerShellへ戻らない場合があります。誤パスワードや変更前のパスワードを試したときのSQLCipherのHMACエラーは想定されるログです。起動失敗のトレースバックとは区別します。
+
+exeで確認する項目：
+
+1. 起動し、メイン・サブ画面の位置とサイズが復元される。
+2. 確認用DBの新規作成、既存DBの正しい／誤ったパスワードでのオープンができる。
+3. 確認用CSVの取込、メモ検索、詳細・移行元表示ができる。
+4. 新規登録・編集・削除と、現在のCSV／原本CSVの出力ができる。
+5. 暗号化バックアップを作成し、同じパスワードで開ける。
+6. パスワード変更後に終了・再起動し、新しいパスワードで開ける。
+7. 終了・再起動後に画面位置とDB選択先が復元される。
+
+開発用とexeは同じ `%APPDATA%\ContactDock\settings.json` を利用します。DBのパスは設定に記録した元の場所を参照します。exeのフォルダを移動してもDB自体は移動しません。
+
+コンソール付きexeを閉じた後、フォルダを丸ごと別の場所へコピーします。
+
+```powershell
+$contactDockMoveFolder = Join-Path ([Environment]::GetFolderPath('Desktop')) 'ContactDock移動確認'
+New-Item -ItemType Directory -Path $contactDockMoveFolder
+Copy-Item .\dist\ContactDockConsole -Destination $contactDockMoveFolder -Recurse
+& (Join-Path $contactDockMoveFolder 'ContactDockConsole\ContactDockConsole.exe')
+```
+
+移動先ではエクスプローラーからexeをダブルクリックしても起動すること、DB・設定が引き続き利用できることを確認します。`_internal` などの付属ファイルも必要なので、exe単体ではなく `ContactDockConsole` フォルダ全体をコピーします。フォルダ移動の確認だけでは、Python未導入PCでの動作確認を済ませたことにはなりません。
+
+上記の確認後、通常版を作成します。
+
+```powershell
+.\.venv\Scripts\python.exe -m PyInstaller --clean --onedir --windowed --noupx --collect-all sqlcipher3 --icon contactdock/assets/contactdock.ico --add-data "contactdock/assets:contactdock/assets" --name ContactDock run_contactdock.py
+.\dist\ContactDock\ContactDock.exe
+```
+
+通常版でも上記の各項目とフォルダ移動を確認します。`dist\ContactDock` 全体が配布対象です。ビルド生成物、DB、CSV、個人の設定JSONはGitへ追加しません。再ビルド時に出力フォルダの置き換え確認が出たら、exeを閉じ、出力内に保存したDB等がないことを確認してから続けます。正式配布前のライセンス表示は別途整備します。
+
+参考：[PyInstaller公式の使い方](https://pyinstaller.org/en/stable/usage.html)
+
+
+### ContactDock出力CSVの再取込
+
+UTF-8（BOM付き）のContactDock出力CSVと、従来のCP932 Outlook CSVをCSV取込で判別します。氏名、メモ、電話、メール、住所、誕生日は現在値として取り込みます。電話・メールの追加順序列も保持します。元の連絡先ID・登録日時・更新日時は移行元情報に残し、新しいIDと取込時の日時を付けて追加します。既存連絡先は更新しません。元DBへ再取込すると重複するため、確認画面で追加先を確認してください。同一ファイルの二度目の取込は拒否します。
+
+CSVでは削除済みデータや元のOutlook取込履歴を復元できません。DB全体の復元は暗号化バックアップを使用してください。取込後に「移行元CSV原本を出力」すると、今回取り込んだContactDock CSVをそのまま出力できます。
+
+
+### アプリアイコン
+
+`contactdock/assets/contactdock.ico` は人物と鍵を組み合わせたContactDockのアイコンです。16～256ピクセルの7サイズを収録します。Windowsの画面アイコンとexeアイコンに使用し、ビルド時は `--icon` と `--add-data` で本体へ組み込みます。
