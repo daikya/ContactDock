@@ -293,3 +293,18 @@ def test_database_dialog_uses_remembered_location(tmp_path,monkeypatch):
     app.choose_database(False)
     assert choose.call_args.kwargs['initialdir']==str(tmp_path)
     assert choose.call_args.kwargs['initialfile']=='previous.db'
+
+
+def test_gui_imports_contactdock_export(database,tmp_path,monkeypatch):
+    from contactdock.service import ContactInput,save_contact
+    from contactdock.exporter import export_current_csv
+    save_contact(database,ContactInput({'note':'架空の再取込メモ🙂'}))
+    path=tmp_path/'current.csv';export_current_csv(database,path)
+    app=app_without_display(database)
+    monkeypatch.setattr(gui.filedialog,'askopenfilename',lambda **kw:str(path))
+    monkeypatch.setattr(gui.messagebox,'askyesno',lambda *a,**kw:True)
+    monkeypatch.setattr(gui.messagebox,'showinfo',Mock())
+    app.import_csv()
+    assert database.execute('SELECT count(*) FROM contacts').fetchone()[0]==2
+    assert database.execute('SELECT source_encoding FROM import_batches').fetchone()[0]=='utf-8-sig'
+    app.refresh.assert_called_once()

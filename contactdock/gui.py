@@ -1,4 +1,5 @@
 """Minimal Tkinter UI for encrypted files, CSV import, and browsing."""
+import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from contactdock import dialogs as simpledialog
@@ -8,7 +9,8 @@ from pathlib import Path
 
 from contactdock.database import create_database, open_database, DatabaseOpenError
 from contactdock.importer import DuplicateImportError, save_csv_preview
-from contactdock.outlook_csv import CsvValidationError, read_outlook_csv
+from contactdock.outlook_csv import CsvValidationError
+from contactdock.contact_csv import read_contact_csv
 from contactdock.repository import get_contact, search_contacts
 from contactdock.backup import backup_database
 from contactdock.password import change_database_password, PasswordChangeError
@@ -62,6 +64,8 @@ def format_source(detail):
 def import_confirmation(preview):
     lines = [f'連絡先 {len(preview.contacts):,}件を追加します。',
              '既存連絡先は更新しません。変更したCSVの場合、連絡先が重複する可能性があります。']
+    if preview.source_encoding=='utf-8-sig':
+        lines += ['ContactDock形式：元のID・登録日時・更新日時は原本情報として保持し、既存連絡先は更新しません。']
     if preview.warnings:
         lines += ['',f'確認事項：{len(preview.warnings):,}件（元値は保持します）']
         counts = Counter(w.column for w in preview.warnings)
@@ -79,6 +83,8 @@ class ContactDockApplication:
         self.connection = None
         self.db_path = None
         root.title('ContactDock')
+        if sys.platform=='win32':
+            root.iconbitmap(default=str(Path(__file__).parent/'assets'/'contactdock.ico'))
         root.geometry('1280x780')
         root.minsize(900,560)
         root.protocol('WM_DELETE_WINDOW',self.close)
@@ -209,10 +215,10 @@ class ContactDockApplication:
 
     def import_csv(self):
         if self.connection is None:return
-        path=filedialog.askopenfilename(parent=self.root,filetypes=[('Outlook CSV','*.csv'),('すべて','*.*')])
+        path=filedialog.askopenfilename(parent=self.root,filetypes=[('Outlook／ContactDock CSV','*.csv'),('すべて','*.*')])
         if not path:return
         try:
-            preview=read_outlook_csv(path)
+            preview=read_contact_csv(path)
             if self.connection.execute('SELECT id FROM import_batches WHERE source_sha256=?',(preview.source_sha256,)).fetchone():
                 messagebox.showinfo('CSV取込','同じCSVは取込済みです。',parent=self.root);return
             if not messagebox.askyesno('CSV取込の確認',import_confirmation(preview),parent=self.root):return
