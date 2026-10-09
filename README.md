@@ -27,7 +27,7 @@ py -3.12 -m venv .venv
 旧Outlook項目の対応と設計判断は[対応表](docs/Outlook_Field_Mapping.md)に残す。
 接続は呼び出し元でcloseする。パスワードをログやコードへ保存しない。
 暗号化は保存ファイルを保護するもので、実行中の端末全体を保護するものではない。
-正式配布前にSQLCipherおよび依存ライブラリのライセンス表示を整備する。
+第三者ライセンスの一覧と原文を配布ZIPへ同梱する（下記の配布手順参照）。
 
 ## Outlook CSVの読取
 
@@ -202,7 +202,7 @@ Copy-Item .\dist\ContactDockConsole -Destination $contactDockMoveFolder -Recurse
 .\dist\ContactDock\ContactDock.exe
 ```
 
-通常版でも上記の各項目とフォルダ移動を確認します。`dist\ContactDock` 全体が配布対象です。ビルド生成物、DB、CSV、個人の設定JSONはGitへ追加しません。再ビルド時に出力フォルダの置き換え確認が出たら、exeを閉じ、出力内に保存したDB等がないことを確認してから続けます。正式配布前のライセンス表示は別途整備します。
+通常版でも上記の各項目とフォルダ移動を確認します。`dist\ContactDock` 全体が配布対象です。ビルド生成物、DB、CSV、個人の設定JSONはGitへ追加しません。再ビルド時に出力フォルダの置き換え確認が出たら、exeを閉じ、出力内に保存したDB等がないことを確認してから続けます。配布時は下記の配布ZIP作成スクリプトでライセンス原文と利用者向け文書を同梱します。
 
 参考：[PyInstaller公式の使い方](https://pyinstaller.org/en/stable/usage.html)
 
@@ -217,3 +217,31 @@ CSVでは削除済みデータや元のOutlook取込履歴を復元できませ�
 ### アプリアイコン
 
 `contactdock/assets/contactdock.ico` は人物と鍵を組み合わせたContactDockのアイコンです。16～256ピクセルの7サイズを収録します。Windowsの画面アイコンとexeアイコンに使用し、ビルド時は `--icon` と `--add-data` で本体へ組み込みます。
+
+## ライセンス同梱と配布ZIPの作成
+
+同梱する第三者ソフトウェアの一覧は `THIRD_PARTY_NOTICES.md`、ライセンス原文は `licenses/` にあります。Python本体のライセンスは、配布ZIP作成時にビルド環境の `LICENSE.txt` をコピーします。Tcl/Tkは実際のビルドに `license.terms` があれば優先してコピーします。依存関係やビルド環境を変更した場合は、実際の配布物に含まれるライブラリとライセンスを再確認します。ContactDock本体の公開ライセンスは、これら第三者ライセンスとは別に決めます。
+
+検証済みの通常版 `dist\ContactDock` を元に配布ZIPを作成します。exeは閉じておき、DBやCSVはビルド済みフォルダの外へ保存してください。
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe package_release.py
+```
+
+標準の出力は `dist\ContactDock-0.1.0-windows-x64.zip` と、そのSHA-256を記録した `.zip.sha256` です。ZIP内は `ContactDock/` 直下にexe、`_internal`、利用者向けREADME、第三者ライセンス一覧、`licenses/`、ビルド情報をまとめます。Python・SQLCipher等の版は `BUILD_INFO.json` に記録します。
+
+DB、CSV、PST、個人の設定JSON、開発用フォルダ、外部参照、ビルド直下の追加ファイルを検出すると作成を中止します。元のビルドは変更せず、一時フォルダで配布物を組み立てます。同名のZIPやSHA-256ファイルは上書きしません。再作成時は別名を指定できます。
+
+```powershell
+.\.venv\Scripts\python.exe package_release.py --output .\dist\ContactDock-0.1.0-windows-x64-check2.zip
+```
+
+ZIPは別のフォルダへ展開し、exeの起動、アイコン、DBのオープン・検索・保存、設定の復元を確認します。ライセンス一覧と原文が展開先で読めることも確認してください。ZIPにはソース、仮想環境、DB、CSV、個人の設定ファイルを同梱しません。ZIPとSHA-256ファイルを配布時の組にします。
+
+```powershell
+Get-FileHash .\dist\ContactDock-0.1.0-windows-x64.zip -Algorithm SHA256
+Get-Content .\dist\ContactDock-0.1.0-windows-x64.zip.sha256
+```
+
+注意：配布ZIPの作成・展開確認と、Python未導入の別PCでの動作確認は別です。これまでに確認した同一PC上のフォルダ移動だけで、別PCでの動作を保証したことにはしません。
