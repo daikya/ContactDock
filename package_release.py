@@ -35,6 +35,7 @@ def create_release(project,bundle,output,python_license,metadata):
     project=Path(project);bundle=validate_bundle(bundle);output=Path(output)
     if output.exists() or output.with_suffix(output.suffix+'.sha256').exists():
         raise FileExistsError('同名の配布ファイルは上書きしません。')
+    if not (project/'LICENSE').is_file():raise ValueError('ContactDock本体のLICENSEが見つかりません。')
     license_dir=project/'licenses'
     if not REQUIRED_LICENSES<={p.name for p in license_dir.glob('*.txt')}:
         raise ValueError('必要なライセンス原文が不足しています。')
@@ -51,6 +52,7 @@ def create_release(project,bundle,output,python_license,metadata):
         for name,folder in (('Tcl.txt','_tcl_data'),('Tk.txt','_tk_data')):
             actual=bundle/'_internal'/folder/'license.terms'
             if actual.is_file():shutil.copy2(actual,stage/'licenses'/name)
+        shutil.copy2(project/'LICENSE',stage/'LICENSE')
         shutil.copy2(project/'DISTRIBUTION_README.md',stage/'README.md')
         shutil.copy2(project/'THIRD_PARTY_NOTICES.md',stage/'THIRD_PARTY_NOTICES.md')
         (stage/'BUILD_INFO.json').write_text(json.dumps(metadata,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')

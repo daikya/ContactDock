@@ -22,7 +22,7 @@ def test_release_contains_notices_and_runtime(bundle,tmp_path):
     with ZipFile(result) as z:
         assert z.testzip() is None
         names=set(z.namelist())
-        assert {'ContactDock/ContactDock.exe','ContactDock/README.md','ContactDock/THIRD_PARTY_NOTICES.md','ContactDock/BUILD_INFO.json','ContactDock/licenses/Python-runtime.txt'}<=names
+        assert {'ContactDock/ContactDock.exe','ContactDock/README.md','ContactDock/THIRD_PARTY_NOTICES.md','ContactDock/BUILD_INFO.json','ContactDock/LICENSE','ContactDock/licenses/Python-runtime.txt'}<=names
         assert z.read('ContactDock/licenses/Python-runtime.txt')==b'fictional python license'
     assert checksum.read_text().split()[0]==hashlib.sha256(output.read_bytes()).hexdigest()
 
@@ -49,3 +49,10 @@ def test_missing_license_does_not_create_zip(bundle,tmp_path):
 def test_extra_root_file_is_not_silently_discarded(bundle):
     (bundle/'personal.txt').touch()
     with pytest.raises(ValueError):package_release.validate_bundle(bundle)
+
+
+def test_missing_application_license_stops_packaging(bundle,tmp_path):
+    project=tmp_path/'project';project.mkdir()
+    with pytest.raises(ValueError,match='LICENSE'):
+        package_release.create_release(project,bundle,tmp_path/'release.zip',tmp_path/'unused',{})
+    assert not (tmp_path/'release.zip').exists()

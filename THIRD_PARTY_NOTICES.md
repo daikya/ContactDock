@@ -1,6 +1,6 @@
 # Third-party software notices
 
-ContactDock uses the following third-party software. ContactDock is an independent application, not an official product of the organizations listed below. Original copyright and license notices are retained under `licenses/` and in the bundled runtime files. These notices describe third-party components; they do not assign a license to ContactDock itself.
+ContactDock uses the following third-party software. ContactDock is an independent application, not an official product of the organizations listed below. Original copyright and license notices are retained under `licenses/` and in the bundled runtime files. ContactDock itself is licensed under the MIT License in the top-level LICENSE file. Third-party components retain their respective licenses below.
 
 | Component | Distribution notice |
 |---|---|

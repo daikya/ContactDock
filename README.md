@@ -220,7 +220,7 @@ CSVでは削除済みデータや元のOutlook取込履歴を復元できませ�
 
 ## ライセンス同梱と配布ZIPの作成
 
-同梱する第三者ソフトウェアの一覧は `THIRD_PARTY_NOTICES.md`、ライセンス原文は `licenses/` にあります。Python本体のライセンスは、配布ZIP作成時にビルド環境の `LICENSE.txt` をコピーします。Tcl/Tkは実際のビルドに `license.terms` があれば優先してコピーします。依存関係やビルド環境を変更した場合は、実際の配布物に含まれるライブラリとライセンスを再確認します。ContactDock本体の公開ライセンスは、これら第三者ライセンスとは別に決めます。
+同梱する第三者ソフトウェアの一覧は `THIRD_PARTY_NOTICES.md`、ライセンス原文は `licenses/` にあります。Python本体のライセンスは、配布ZIP作成時にビルド環境の `LICENSE.txt` をコピーします。Tcl/Tkは実際のビルドに `license.terms` があれば優先してコピーします。依存関係やビルド環境を変更した場合は、実際の配布物に含まれるライブラリとライセンスを再確認します。ContactDock本体はMITライセンスです。`LICENSE` を配布ZIPへ同梱し、第三者ソフトウェアにはそれぞれのライセンスを適用します。
 
 検証済みの通常版 `dist\ContactDock` を元に配布ZIPを作成します。exeは閉じておき、DBやCSVはビルド済みフォルダの外へ保存してください。
 
@@ -245,3 +245,16 @@ Get-Content .\dist\ContactDock-0.1.0-windows-x64.zip.sha256
 ```
 
 注意：配布ZIPの作成・展開確認と、Python未導入の別PCでの動作確認は別です。これまでに確認した同一PC上のフォルダ移動だけで、別PCでの動作を保証したことにはしません。
+
+
+## GitHub Release v0.1.0
+
+初回の公開タグは `v0.1.0`、タイトルは `ContactDock v0.1.0` とします。公開前にLICENSE追加後の配布ZIPを作成し、展開して確認します。以前のZIPには本体LICENSEが含まれないため、公開に使わないでください。同名ZIPの上書きは避け、別名で生成します。
+
+```powershell
+.\.venv\Scripts\python.exe package_release.py --output .\dist\ContactDock-0.1.0-windows-x64-release.zip
+```
+
+GitHubのReleasesから新しいリリースの下書きを作成し、タグ `v0.1.0`、Target `main` を選択します。ライセンス追加のコミットをpushした後のmainを対象にします。添付するのは、確認済みの `ContactDock-0.1.0-windows-x64-release.zip` と同じ名前の `.zip.sha256` です。GitHubの自動生成するSource code ZIPは、Windows実行用の配布ZIPとは別です。初回公開の前に、Releaseの説明と添付ファイルを確認します。
+
+今回確認済みなのはWindows上の188件のテスト、コンソール付き／通常版exe、同一PC上の別フォルダからの起動と操作、配布ZIPの展開です。Python未導入の別PCでの実行は未確認です。

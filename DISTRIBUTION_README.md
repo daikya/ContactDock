@@ -24,3 +24,6 @@ CSV出力ファイルは暗号化されず、パスワードなしで読めま�
 ビルド環境の版は `BUILD_INFO.json` に記録しています。
 
 プロジェクト：https://github.com/daikya/ContactDock
+
+ContactDock本体はMITライセンスです。条件と免責事項は `LICENSE` を参照してください。
+第三者ソフトウェアにはそれぞれのライセンスが適用されます。
